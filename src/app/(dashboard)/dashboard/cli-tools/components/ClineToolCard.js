@@ -20,6 +20,8 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [providerModels, setProviderModels] = useState([]);
+  const [showProviderModels, setShowProviderModels] = useState(false);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) setSelectedApiKey(apiKeys[0].key);
@@ -40,6 +42,41 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
   useEffect(() => {
     if (status?.settings?.openAiModelId) setSelectedModel(status.settings.openAiModelId);
   }, [status]);
+
+  // Auto-load models from active providers
+  useEffect(() => {
+    if (!activeProviders?.length) {
+      setProviderModels([]);
+      return;
+    }
+    const models = [];
+    const seen = new Set();
+    activeProviders.forEach(conn => {
+      const alias = conn.provider;
+      const providerModels = conn.models || [];
+      providerModels.forEach(m => {
+        const modelValue = `${alias}/${m.id}`;
+        if (!seen.has(modelValue)) {
+          seen.add(modelValue);
+          models.push({
+            value: modelValue,
+            label: `${alias}/${m.name || m.id}`,
+            provider: alias,
+            modelId: m.id,
+          });
+        }
+      });
+    });
+    setProviderModels(models);
+  }, [activeProviders]);
+
+  // Auto-select first model if none selected and provider models available
+  useEffect(() => {
+    if (!selectedModel && providerModels.length > 0 && status?.installed) {
+      const first = providerModels[0];
+      setSelectedModel(first.value);
+    }
+  }, [providerModels, selectedModel, status]);
 
   const fetchModelAliases = async () => {
     try {
@@ -250,8 +287,34 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                    <input
+                      type="text"
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      onFocus={() => providerModels.length > 0 && setShowProviderModels(true)}
+                      onBlur={() => setTimeout(() => setShowProviderModels(false), 200)}
+                      placeholder="provider/model-id"
+                      className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                    />
                     {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    {/* Auto-loaded model quick-pick dropdown */}
+                    {showProviderModels && providerModels.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded border border-border bg-surface shadow-lg">
+                        <div className="sticky top-0 bg-surface border-b border-border px-2 py-1 text-[10px] font-semibold text-text-muted">
+                          Models from active providers
+                        </div>
+                        {providerModels.map((m, i) => (
+                          <button
+                            key={`${m.value}-${i}`}
+                            className={`w-full text-left px-2 py-1.5 text-xs hover:bg-primary/10 transition-colors ${selectedModel === m.value ? "bg-primary/15 text-primary" : "text-text-main"}`}
+                            onMouseDown={(e) => { e.preventDefault(); setSelectedModel(m.value); setShowProviderModels(false); }}
+                          >
+                            <span className="font-medium">{m.label}</span>
+                            <span className="text-text-muted ml-1 text-[10px]">({m.provider})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
                 </div>
